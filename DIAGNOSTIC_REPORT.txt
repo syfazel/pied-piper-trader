@@ -1,0 +1,97 @@
+
+============================================================
+ 1. SYSTEM INFO
+============================================================
+Python Version: 3.12.4 (tags/v3.12.4:8e8a4ba, Jun  6 2024, 19:30:16) [MSC v.1940 64 bit (AMD64)]
+Platform: win32
+TensorFlow Version: 2.20.0
+Scikit-learn Version: 1.7.2
+
+============================================================
+ 2. DATA HEALTH CHECK
+============================================================
+Fetching Data Sample (Live + History)...
+Data Shape: (51025, 6)
+Date Range: 1970-01-01 00:00:00.000000050 to 2025-11-20 09:00:00
+Total Missing Values (NaN): 50025
+timestamp    50025
+dtype: int64
+Duplicated Time Indices: 0
+
+============================================================
+ 3. FEATURE ENGINEERING CHECK
+============================================================
+Applying Indicators...
+Shape after Features: (951, 24)
+Infinite Values: 0
+Labeling Data (Target Generation)...
+Final Training Set X: (951, 5)
+Final Training Set y: (951,)
+
+TARGET BALANCE (Is the game rigged?):
+target
+0    0.582545
+1    0.417455
+Name: proportion, dtype: float64
+
+FEATURE CORRELATION WITH TARGET:
+target            1.000000
+pct_change_3h     0.001586
+sma_50           -0.000227
+vol_ratio        -0.007023
+macd_hist        -0.080330
+pct_change_24h   -0.147077
+Name: target, dtype: float64
+
+============================================================
+ 4. MODEL PERFORMANCE DIAGNOSIS
+============================================================
+Training Ensemble Model on Audit Subset...
+
+--- Evaluating Model A (LSTM/Boosting) ---
+
+--- Evaluating Final Ensemble (Combined) ---
+
+Confusion Matrix:
+[[53  0]
+ [33  4]]
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.62      1.00      0.76        53
+           1       1.00      0.11      0.20        37
+
+    accuracy                           0.63        90
+   macro avg       0.81      0.55      0.48        90
+weighted avg       0.77      0.63      0.53        90
+
+
+============================================================
+ 5. LOG FILE ANALYSIS
+============================================================
+Reading last 20 lines from app_log_20251120.txt:
+2025-11-20 13:59:06,878 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 13:59:16,886 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 13:59:16,892 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 13:59:26,899 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 13:59:26,905 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 14:01:08,758 - INFO - utils - --- Logging System Initialized ---
+2025-11-20 14:01:25,634 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 14:01:25,642 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 14:01:35,655 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 14:01:35,661 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 14:01:45,659 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 14:01:45,664 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 14:01:55,666 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 14:01:55,673 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 14:02:05,679 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 14:02:05,684 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+2025-11-20 14:02:07,613 - INFO - utils - --- Logging System Initialized ---
+2025-11-20 14:02:07,621 - INFO - wallex - INGEST: Requesting ETHUSDT (Toman Base)...
+2025-11-20 14:02:15,705 - INFO - worker - WORKER: Starting RAW analysis cycle...
+2025-11-20 14:02:15,712 - INFO - wallex - INGEST: Requesting ETHTMN (Toman Base)...
+
+============================================================
+ END OF AUDIT
+============================================================
