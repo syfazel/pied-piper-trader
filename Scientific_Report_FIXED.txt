@@ -1,0 +1,20 @@
+
+================================================================
+          🔬 PIED PIPER: CORRECTED DIAGNOSTIC REPORT
+================================================================
+Date: 2025-11-22 00:21:38
+
+1. REALITY CHECK (Signals)
+---------------------------
+- Total Cycles: 402
+- BUY  Signals: 0
+- SELL Signals: 0
+- WAIT Signals: 402
+* Note: If BUY is 0 but CSV has BUYS, check database integrity.
+
+2. AI PERFORMANCE
+---------------------------
+- Precision (Real Accuracy): 0.00%
+- Validated Samples: 0
+
+================================================================

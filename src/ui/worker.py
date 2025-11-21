@@ -4,9 +4,10 @@ import traceback
 import asyncio
 import pandas as pd
 import numpy as np
-import time # <--- FIX: اضافه شد
+import time
+import gc
+import os
 
-# ایمپورت ماژول‌های سیستم
 from src.ingest.wallex import WallexConnector
 from src.ingest.big_data import BigDataManager
 from src.features.indicators import TechnicalFeatures
@@ -20,117 +21,169 @@ from src.core.utils import LOGGER
 from src.core.doctor import SystemDoctor
 
 class AnalysisWorker(QThread):
-    finished = Signal(dict)
+    data_ready = Signal(dict)
     error = Signal(str)
     log = Signal(str)
 
-    def __init__(self, symbol="ETHUSDT"):
+    def __init__(self, symbol="ETHTMN"): # پیش‌فرض صحیح
         super().__init__()
         self.symbol = symbol
         self.doctor = SystemDoctor()
+        self.is_running = True 
+        self.ensemble = None 
+
+    def stop(self):
+        self.is_running = False
 
     def run(self):
         db_manager = DBManager()
         big_data_mgr = BigDataManager()
-        start_time = time.time() # تایمر دکتر
         
-        try:
-            LOGGER.info("WORKER: Starting RAW analysis cycle...")
+        LOGGER.info("WORKER: Initializing AI Brain...")
+        self.log.emit("🚀 Initializing AI Engine...")
+        
+        if self.ensemble is None:
+            self.ensemble = EnsemblePredictor()
+        
+        LOGGER.info("WORKER: Entering Infinite Monitoring Loop...")
+        
+        while self.is_running:
+            loop_start = time.time()
             
-            # 1. دریافت داده زنده
-            self.log.emit("📡 Fetching Live Data...")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            live_df = loop.run_until_complete(self._fetch_data())
-            loop.close()
+            try:
+                # --- FIX: اجبار به نماد صحیح تومانی ---
+                if "USDT" in self.symbol and "TMN" not in self.symbol:
+                     self.symbol = "ETHTMN" # تصحیح خودکار
 
-            if live_df is None or live_df.empty: 
-                raise Exception("Live data fetch failed.")
-            
-            current_price = live_df.iloc[-1]['close']
+                # 1. دریافت داده زنده
+                self.log.emit(f"📡 Fetching Data ({self.symbol})...")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                live_df = loop.run_until_complete(self._fetch_data())
+                loop.close()
 
-            # 2. ترکیب با داده‌های ۵۰ هزارتایی
-            self.log.emit("💾 Merging Big Data...")
-            full_df = big_data_mgr.get_combined_data(live_df, target_size=50000)
+                if live_df is None or live_df.empty: 
+                    self.log.emit("⚠️ Data Fetch Failed. Retrying...")
+                    time.sleep(5)
+                    continue
+                
+                current_price = live_df.iloc[-1]['close']
 
-            # 3. محاسبه اندیکاتورها
-            self.log.emit("⚙️ Calculating Indicators...")
-            df_processed = TechnicalFeatures.add_all(full_df)
+                # --- FIX: گارد امنیتی قیمت صفر ---
+                if current_price <= 0:
+                    LOGGER.error(f"CRITICAL: Received Zero Price for {self.symbol}. Market Offline?")
+                    self.log.emit("⛔ Market Data Error (Price=0)")
+                    time.sleep(5)
+                    continue
 
-            # 4. هوش مصنوعی (بدون سانسور!)
-            self.log.emit("🤖 AI: Analyzing (No Filter)...")
-            labeler = DataLabeler()
-            X, y, scaler = labeler.prepare(df_processed) 
-            
-            ensemble = EnsemblePredictor()
-            ensemble.train_all(X, y) 
-            
-            # بررسی طول داده
-            if len(X) < SEQUENCE_LENGTH:
-                last_features = X
-            else:
+                # 2. ترکیب داده‌ها
+                full_df = big_data_mgr.get_combined_data(live_df, target_size=50000)
+                
+                # 3. پردازش (روی 2000 تای آخر برای سرعت)
+                processing_df = full_df.tail(2000).copy()
+                self.log.emit("⚙️ Analyzing...")
+                df_processed = TechnicalFeatures.add_all(processing_df)
+
+                # 4. هوش مصنوعی
+                labeler = DataLabeler()
+                X, y, scaler = labeler.prepare(df_processed) 
+                
+                if not self.ensemble.is_trained:
+                    self.log.emit("🧠 First-time Training...")
+                    self.ensemble.train_all(X, y)
+                
+                if len(X) < SEQUENCE_LENGTH:
+                     raise Exception("Insufficient data buffer.")
+
                 last_features = X.tail(SEQUENCE_LENGTH)
+                
+                # پیش‌بینی
+                ai_pred_raw, ai_conf = self.ensemble.predict_combined(last_features) 
+                
+                # منطق سه وضعیتی
+                THRESHOLD_BUY = 0.55
+                THRESHOLD_SELL = 0.45
+                
+                if ai_conf >= THRESHOLD_BUY:
+                    ai_direction = "BUY"
+                elif ai_conf <= THRESHOLD_SELL:
+                    ai_direction = "SELL"
+                else:
+                    ai_direction = "WAIT"
 
-            # پیش‌بینی خام (Raw Prediction)
-            ai_pred, ai_conf = ensemble.predict_combined(last_features) 
-            
-            # محاسبه SHAP
-            last_row_df = pd.DataFrame(X.tail(1), columns=X.columns)
-            shap_importance = ensemble.aux_predictor.get_feature_importance(last_row_df)
+                # SHAP
+                last_row_df = X.tail(1)
+                shap_importance = self.ensemble.aux_predictor.get_feature_importance(last_row_df)
 
-            # 5. ثبت و اعتبارسنجی (بدون شرط اطمینان بالا)
-            self.log.emit("⚖️ Recording Prediction...")
-            db_manager.validate_past_predictions(current_price, validation_period_minutes=120)
-            
-            ai_direction = "BUY" if ai_pred == 1 else "SELL"
-            
-            # ذخیره همه پیش‌بینی‌ها (بدون فیلتر)
-            db_manager.add_prediction(self.symbol, ai_direction, ai_conf, current_price)
-            
-            # 6. استراتژی و اخبار
-            self.log.emit("🧠 Strategy & News...")
-            strategy = SmartStrategy()
-            
-            connector = WallexConnector()
-            macro_data = connector.get_macro_prices()
-            
-            nlp = NewsAnalyzer()
-            sent_res = nlp.analyze_headlines() 
-            
-            recent_df = df_processed.tail(100)
-            strat_res = strategy.analyze(recent_df, macro_data, sent_res['sentiment_score'])
-            
-            action_to_save = strat_res.get('signal', strat_res.get('action', 'UNKNOWN'))
-            db_manager.save_signal(self.symbol, action_to_save, strat_res['score'], current_price)
-            
-            # 7. خروجی نهایی
-            history_df, accuracy = db_manager.get_ai_history()
-            
-            report_text = ReportGenerator.create_report(
-                self.symbol, strat_res, (ai_pred, ai_conf), sent_res, shap_importance
-            )
+                # 5. اعتبارسنجی و ذخیره
+                db_manager.validate_past_predictions(current_price, validation_period_minutes=120)
+                
+                if ai_direction != "WAIT":
+                    db_manager.add_prediction(self.symbol, ai_direction, ai_conf, current_price)
+                
+                # 6. استراتژی و اخبار
+                strategy = SmartStrategy()
+                connector = WallexConnector()
+                macro_data = connector.get_macro_prices()
+                nlp = NewsAnalyzer()
+                sent_res = nlp.analyze_headlines() 
+                
+                strat_res = strategy.analyze(df_processed.tail(100), macro_data, sent_res['sentiment_score'])
+                
+                # Consensus
+                final_consensus = "WAIT"
+                if strat_res['action'] == "BUY" and ai_direction == "BUY":
+                    final_consensus = "BUY"
+                elif strat_res['action'] == "SELL" and ai_direction == "SELL":
+                    final_consensus = "SELL"
+                
+                db_manager.save_signal(self.symbol, final_consensus, strat_res['score'], current_price)
+                
+                # 7. ارسال نتیجه
+                history_df, accuracy = db_manager.get_ai_history()
+                
+                # تبدیل برای گزارش
+                ai_pred_code = 1 if ai_direction == "BUY" else 0
+                
+                report_text = ReportGenerator.create_report(
+                    self.symbol, strat_res, (ai_pred_code, ai_conf), sent_res, shap_importance
+                )
 
-            result_package = {
-                "dataframe": recent_df, 
-                "report": report_text, 
-                "strategy": strat_res, 
-                "sentiment": sent_res, 
-                "macro": macro_data, 
-                "history": {"df": history_df, "accuracy": accuracy},
-                "feature_weights": shap_importance
-            }
-            
-            # ثبت علائم حیاتی در دکتر
-            self.doctor.checkup(start_time, (ai_pred, ai_conf), strat_res)
-            
-            self.finished.emit(result_package)
+                result_package = {
+                    "dataframe": df_processed.tail(150), 
+                    "report": report_text, 
+                    "strategy": strat_res, 
+                    "sentiment": sent_res, 
+                    "macro": macro_data, 
+                    "history": {"df": history_df, "accuracy": accuracy},
+                    "feature_weights": shap_importance
+                }
+                
+                # ارسال وضعیت به دکتر
+                strat_res_for_doctor = strat_res.copy()
+                strat_res_for_doctor['action'] = final_consensus
+                
+                # اینجا ai_direction را می‌فرستیم (BUY/SELL/WAIT)
+                self.doctor.checkup(loop_start, (ai_direction, ai_conf), strat_res_for_doctor)
+                
+                self.data_ready.emit(result_package)
+                LOGGER.info(f"CYCLE DONE. Signal: {final_consensus} | AI: {ai_direction} ({ai_conf:.1%})")
 
-        except Exception as e:
-            LOGGER.error(f"WORKER ERROR: {e}", exc_info=True)
-            traceback.print_exc()
-            self.error.emit(str(e))
-        finally:
-            db_manager.close() 
+                # پاکسازی حافظه
+                del df_processed, X, y, full_df
+                gc.collect()
+
+            except Exception as e:
+                LOGGER.error(f"CYCLE ERROR: {e}", exc_info=True)
+                self.log.emit(f"⚠️ Error: {str(e)[:30]}...")
+                time.sleep(5)
+
+            for _ in range(5): 
+                if not self.is_running: break
+                time.sleep(1)
+        
+        db_manager.close()
+        LOGGER.info("WORKER: Stopped.")
 
     async def _fetch_data(self):
         async with WallexConnector() as exchange:

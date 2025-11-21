@@ -1,16 +1,18 @@
 # src/ui/main_window.py
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                               QPushButton, QLabel, QTabWidget, QTextEdit, QSplitter, QLineEdit)
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont, QColor, QIcon
+                               QPushButton, QLabel, QTabWidget, QTextEdit, QSplitter, 
+                               QLineEdit, QMessageBox)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from src.ui.worker import AnalysisWorker
 from src.ui.widgets import NewsMonitorWidget, DataMatrixWidget, AdvancedChartWidget, AIPerformanceWidget
+from src.reporting.scientific import ScientificReporter 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Pied Piper Next-Gen (Real-Time Command Center)")
+        self.setWindowTitle("Pied Piper Next-Gen (Stable Core)")
         self.resize(1400, 950)
         
         self.setStyleSheet("""
@@ -24,59 +26,63 @@ class MainWindow(QMainWindow):
             QLineEdit { background-color: #1E1E1E; color: white; border: 1px solid #444; padding: 5px; border-radius: 4px; font-weight: bold;}
         """)
 
-        # --- تایمر برای رفرش خودکار (5 ثانیه) ---
-        self.timer = QTimer()
-        self.timer.setInterval(5000) # <--- تغییر به 5000 میلی‌ثانیه (5 ثانیه)
-        self.timer.timeout.connect(self.run_analysis_cycle)
-        self.is_auto_running = False
+        # --- FIX: حذف تایمر QTimer (چون Worker خودش لوپ دارد) ---
+        self.worker = None 
 
         self.setup_ui()
 
     def setup_ui(self):
+        # ... (همان کدهای UI قبلی بدون تغییر) ...
+        # (برای خلاصه شدن کد، فقط بخش‌های تغییر یافته را می‌نویسم)
+        
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         layout = QVBoxLayout(main_widget)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(15)
 
-        # --- HEADER ---
         header = QHBoxLayout()
-        
         title = QLabel("ALGO TRADER")
         title.setStyleSheet("color: #2962FF; font-weight: 900; font-size: 18px; margin-right: 10px;")
-        
         self.input_symbol = QLineEdit("ETHTMN")
         self.input_symbol.setFixedWidth(100)
         self.input_symbol.setAlignment(Qt.AlignCenter)
         
-        self.btn_run = QPushButton("🚀 START AUTO (5s)")
+        # دکمه تغییر کرده است
+        self.btn_run = QPushButton("🚀 START SYSTEM") 
         self.btn_run.setCursor(Qt.PointingHandCursor)
+        self.btn_run.setCheckable(True)
         self.btn_run.setStyleSheet("""
             QPushButton { background-color: #2962FF; color: white; padding: 10px 25px; font-weight: bold; border-radius: 5px; border: none; font-size: 13px; }
             QPushButton:hover { background-color: #1E88E5; }
             QPushButton:checked { background-color: #D32F2F; } 
         """)
-        self.btn_run.setCheckable(True)
-        self.btn_run.clicked.connect(self.toggle_auto_mode)
+        self.btn_run.clicked.connect(self.toggle_system) # اتصال به متد جدید
+        
+        # ... (بقیه دکمه‌ها و لیبل‌ها مثل قبل) ...
+        self.btn_report = QPushButton("📑 SCI-REPORT")
+        self.btn_report.setCursor(Qt.PointingHandCursor)
+        self.btn_report.setStyleSheet("QPushButton { background-color: #6C5CE7; color: white; padding: 10px 15px; font-weight: bold; border-radius: 5px; border: none; font-size: 13px; } QPushButton:hover { background-color: #5649B9; }")
+        self.btn_report.clicked.connect(self.generate_scientific_report)
         
         self.lbl_status = QLabel("System Ready")
         self.lbl_status.setStyleSheet("color: gray; margin-left: 15px; font-size: 13px;")
-        
-        self.lbl_macro = QLabel("Waiting for Data...")
+        self.lbl_macro = QLabel("Waiting...")
         self.lbl_macro.setStyleSheet("color: #FFD700; font-weight: bold; font-size: 14px;")
         
         header.addWidget(title)
         header.addWidget(self.input_symbol)
         header.addWidget(self.btn_run)
+        header.addWidget(self.btn_report)
         header.addWidget(self.lbl_status)
         header.addStretch()
         header.addWidget(self.lbl_macro)
         layout.addLayout(header)
 
-        # --- TABS ---
+        # تب‌ها (بدون تغییر)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-
+        
         self.tab_dashboard = QWidget()
         self.setup_dashboard_tab()
         self.tabs.addTab(self.tab_dashboard, "📊 DASHBOARD")
@@ -91,65 +97,66 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.widget_ai_history, "⚖️ AI VALIDATION")
 
     def setup_dashboard_tab(self):
+        # ... (بدون تغییر) ...
         layout = QVBoxLayout(self.tab_dashboard)
         layout.setContentsMargins(0, 10, 0, 0)
         splitter = QSplitter(Qt.Vertical)
         splitter.setHandleWidth(2)
-        
         self.chart_widget = AdvancedChartWidget()
         splitter.addWidget(self.chart_widget)
-        
         self.report_view = QTextEdit()
         self.report_view.setReadOnly(True)
         self.report_view.setFont(QFont("Consolas", 10))
         self.report_view.setPlaceholderText("Waiting for analysis report...")
         splitter.addWidget(self.report_view)
-        
         splitter.setSizes([700, 300])
         layout.addWidget(splitter)
 
-    def toggle_auto_mode(self, checked):
+    def toggle_system(self, checked):
+        """مدیریت روشن/خاموش کردن ترد"""
         if checked:
-            self.is_auto_running = True
-            self.btn_run.setText("⏹ STOP")
+            self.btn_run.setText("⏹ STOP SYSTEM")
             self.btn_run.setStyleSheet("background-color: #D32F2F; color: white; padding: 10px 25px; font-weight: bold; border-radius: 5px; border: none;")
             self.input_symbol.setEnabled(False)
-            self.run_analysis_cycle()
-            self.timer.start()
+            self.start_worker()
         else:
-            self.is_auto_running = False
-            self.btn_run.setText("🚀 START AUTO (5s)")
+            self.btn_run.setText("🚀 START SYSTEM")
             self.btn_run.setStyleSheet("background-color: #2962FF; color: white; padding: 10px 25px; font-weight: bold; border-radius: 5px; border: none;")
-            self.lbl_status.setText("Monitoring Paused")
             self.input_symbol.setEnabled(True)
-            self.timer.stop()
+            self.stop_worker()
 
-    def run_analysis_cycle(self):
-        self.lbl_status.setText("⏳ Syncing...")
-        self.lbl_status.setStyleSheet("color: #2962FF;")
-        
-        # اگر هنوز پردازش قبلی تمام نشده، بعدی را شروع نکن (جلوگیری از کرش)
-        if hasattr(self, 'worker') and self.worker.isRunning():
-            return
-
+    def start_worker(self):
         symbol = self.input_symbol.text().upper()
         self.worker = AnalysisWorker(symbol)
+        
+        # اتصال سیگنال‌های جدید
         self.worker.log.connect(self.update_status)
         self.worker.error.connect(self.on_error)
-        self.worker.finished.connect(self.on_success)
+        self.worker.data_ready.connect(self.on_data_ready) # <--- سیگنال اصلی
+        
         self.worker.start()
+
+    def stop_worker(self):
+        if self.worker:
+            self.lbl_status.setText("Stopping...")
+            self.worker.stop()
+            self.worker.wait() # صبر تا ترد کامل بسته شود
+            self.lbl_status.setText("System Stopped")
 
     def update_status(self, msg):
         self.lbl_status.setText(msg)
 
     def on_error(self, err):
-        self.lbl_status.setText(f"❌ Error: {err}")
+        # فقط ارور را نشان بده اما دکمه را خاموش نکن (چون ورکر خودش تلاش مجدد می‌کند)
+        self.lbl_status.setText(f"⚠️ {err}")
         self.lbl_status.setStyleSheet("color: #FF5252;")
 
-    def on_success(self, result):
-        self.lbl_status.setText("✅ Active (5s refresh)")
+    def on_data_ready(self, result):
+        """دریافت داده از حلقه ورکر"""
+        self.lbl_status.setText("✅ Live Monitoring")
         self.lbl_status.setStyleSheet("color: #00E676;")
         
+        # آپدیت تمام بخش‌ها (مثل قبل)
         macro = result.get('macro', {})
         usdt = macro.get('USDT_IRT', 0)
         gold = macro.get('GOLD_IRT', 0)
@@ -165,19 +172,40 @@ class MainWindow(QMainWindow):
         
         if 'sentiment' in result:
             sentiment_data = result['sentiment']
-            # فقط اگر لیست اخبار خالی نبود آپدیت کن
             if 'news_list' in sentiment_data and sentiment_data['news_list']:
                 self.widget_news.update_news(sentiment_data['news_list'])
-            
+                
         if 'history' in result:
             hist = result['history']
             self.widget_ai_history.update_history(hist['df'], hist['accuracy'])
 
+    def generate_scientific_report(self):
+        # ... (بدون تغییر) ...
+        reporter = ScientificReporter()
+        filename, content = reporter.generate_full_report()
+        if content == "Error":
+            QMessageBox.critical(self, "Report Error", filename)
+        elif content == "Empty":
+            QMessageBox.warning(self, "No Data", "No trading history found.")
+        else:
+            msg = QMessageBox()
+            msg.setWindowTitle("Scientific Report Generated")
+            msg.setText(f"Report saved successfully!\n\nFile: {filename}")
+            msg.setIcon(QMessageBox.Information)
+            msg.exec()
+            try:
+                import os
+                os.startfile(filename)
+            except: pass
+
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
+    
     app = QApplication(sys.argv)
     app.setStyle("Fusion") 
+    
     window = MainWindow()
     window.show()
+    
     sys.exit(app.exec())
